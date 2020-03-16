@@ -65,6 +65,12 @@ Run the Ansible Playbook within the same working directory as follows.
 - If you want to modify the lite image:
 
    ```bash
+   ansible-playbook modify_raspbian_image.yml -e 'imagetype="lite"' --ask-vault-pass
+   ```
+
+   If you have defined the variable as `imagetype: lite`, then you don't need to use the option `-e 'imagetype="lite"'` at the command line:
+
+   ```bash
    ansible-playbook modify_raspbian_image.yml --ask-vault-pass
    ```
 

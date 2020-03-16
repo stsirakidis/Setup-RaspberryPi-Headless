@@ -1,0 +1,214 @@
+---
+- name: Modify Raspbian image for the Raspberry Pi
+  hosts: localhost
+  connection: local
+  gather_facts: True
+  gather_subset:
+    - "!all"
+  vars:
+    sector_size: 512
+  vars_files:
+    - raspbian_vars.yml
+    - raspbian_passwords.yml
+  become: yes
+  become_user: root
+
+  tasks:
+    - name: Get user info from local passwd
+      getent:
+        database: passwd
+        key: "{{ ansible_env.USER }}"
+
+    - name: Download latest Raspbian full image
+      get_url:
+        url: "{{ fullimage }}"
+        dest: "{{ ansible_env.PWD }}"
+        owner: "{{ ansible_env.USER }}"
+        group: "{{ getent_passwd[ansible_env.USER].2 }}"
+        checksum: sha256:"{{ fullhash }}"
+      when: imagetype == "full"
+      register: download
+
+    - name: Download latest Raspbian desktop image
+      get_url:
+        url: "{{ desktopimage }}"
+        dest: "{{ ansible_env.PWD }}"
+        owner: "{{ ansible_env.USER }}"
+        group: "{{ getent_passwd[ansible_env.USER].2 }}"
+        checksum: sha256:"{{ desktophash }}"
+      when: imagetype == "desktop"
+      register: download
+
+    - name: Download latest Raspbian lite image
+      get_url:
+        url: "{{ liteimage }}"
+        dest: "{{ ansible_env.PWD }}"
+        owner: "{{ ansible_env.USER }}"
+        group: "{{ getent_passwd[ansible_env.USER].2 }}"
+        checksum: sha256:"{{ litehash }}"
+      when: imagetype == "lite"
+      register: download
+
+    - name: Modify Raspbian image
+      block:
+        - debug:
+            msg: 'Unpack the image and mount its boot and root partitions to the local machine'
+
+        - name: Create directory for unpackinig
+          file:
+            path: "{{ dest_image_path }}"
+            state: directory
+            mode: 0755
+
+        - name: Extract {{ download.dest }} into {{ dest_image_path }}
+          unarchive:
+            src: "{{ download.dest }}"
+            dest: "{{ dest_image_path }}"
+            list_files: yes
+          register: filesinside
+
+        - name: Get the extracted file (first item from list of filesinside.files)
+          set_fact:
+            imagefilename: "{{ filesinside.files[0] }}"
+
+        - name: Get the start sector from the /boot partition
+          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}1\s+\K\S+'
+          register: start_sector_boot
+
+        - name: Get the start sector from the /root partition
+          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\K\S+'
+          register: start_sector_root
+
+        - name: Get the last sector from the /root partition
+          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\S+\s+\K\S+'
+          register: last_sector_root
+
+        - name: Set offset for partitions
+          set_fact:
+            offset_boot: "{{ sector_size * start_sector_boot.stdout | int | abs }}"
+            sizelm_boot: "{{ sector_size * ( (start_sector_root.stdout | int) - (start_sector_boot.stdout | int) ) | int | abs }}"
+            offset_root: "{{ sector_size * start_sector_root.stdout | int | abs }}"
+            sizelm_root: "{{ sector_size * ( (last_sector_root.stdout | int) - (start_sector_root.stdout | int) + 1 ) | int | abs }}"
+
+        - name: Create mount directory for boot
+          file:
+            path: "{{ mount_dir }}/boot"
+            state: directory
+            owner: root
+            group: root
+            mode: 0755
+            recurse: yes
+
+        # fstab: /tmp/fstab -> To avoid overwriting the /etc/fstab!!!!!
+        - name: Mount boot partition
+          mount:
+            path: "{{ mount_dir }}/boot"
+            src: "{{ dest_image_path }}/{{ imagefilename }}"
+            fstype: vfat
+            opts: auto,offset={{ offset_boot }},sizelimit={{ sizelm_boot }}
+            state: mounted
+            fstab: /tmp/fstab
+
+        - name: Create mount directory for root
+          file:
+            path: "{{ mount_dir }}/root"
+            state: directory
+            owner: root
+            group: root
+            mode: 0755
+            recurse: yes
+
+        # fstab: /tmp/fstab -> To avoid overwriting the /etc/fstab!!!!!
+        - name: Mount root partition
+          mount:
+            path: "{{ mount_dir }}/root"
+            src: "{{ dest_image_path }}/{{ imagefilename }}"
+            fstype: ext4
+            opts: auto,offset={{ offset_root }},sizelimit={{ sizelm_root }}
+            state: mounted
+            fstab: /tmp/fstab
+
+        - name: Enable SSH on the new Raspbian image
+          file:
+            path: "{{ mount_dir }}/boot/ssh"
+            owner: root
+            group: root
+            state: touch
+            mode: 0755
+
+        - name: Set new hostname in /etc/hosts
+          replace:
+            path: "{{ mount_dir }}/root/etc/hosts"
+            regexp: 'raspberrypi'
+            replace: "{{ pi_hostname }}"
+
+        - name: Set new hostname in /etc/hostname
+          replace:
+            path: "{{ mount_dir }}/root/etc/hostname"
+            regexp: 'raspberrypi'
+            replace: "{{ pi_hostname }}"
+
+        - name: Set parameters for the wlan connection
+          lineinfile:
+            path: "{{ mount_dir }}/boot/wpa_supplicant.conf"
+            create: yes
+            line: "{{ item }}"
+            state: present
+          with_items:
+            - "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev"
+            - "update_config=1"
+            - "country={{ wifi_country }}\n"
+            - "network={"
+            - "\tscan_ssid=1"
+            - "\tssid=\"{{ wifi_ssid}}\""
+            - "\tpsk=\"{{ wifi_psk }}\""
+            - "\tkey_mgmt=WPA-PSK"
+            - "}"
+          no_log: true
+
+        - name: Set password for the pi user
+          lineinfile:
+            dest: "{{ mount_dir }}/root/etc/shadow"
+            regexp: 'pi:([^:]+):(.*)'
+            line: 'pi:{{ pi_password | password_hash("sha512", 65534 | random(seed=pi_hostname) | string) }}:\2'
+            state: present
+            backrefs: yes        
+
+      always:
+        - debug:
+            msg: 'Cleaning up'
+
+        - name: Unmount root partition
+          mount:
+            path: "{{ mount_dir }}/root"
+            state: unmounted
+
+        - name: Unmount boot partition
+          mount:
+            path: "{{ mount_dir }}/boot"
+            state: unmounted
+
+        - name: Rename modified Raspbian image to _modified.img
+          command: mv "{{ dest_image_path }}/{{ imagefilename }}" "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
+
+        - name: Compress modified Raspbian image and copy it to working directory
+          archive:
+            path: "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
+            dest: "{{ ansible_env.PWD }}/{{ imagefilename | regex_replace('.img', '_modified.zip') }}"
+            owner: "{{ ansible_env.USER }}"
+            group: "{{ getent_passwd[ansible_env.USER].2 }}"
+            format: zip
+            remove: yes
+
+        - name: Delete temporary directories and files
+          file:
+            path: "{{ item }}"
+            state: absent
+            force: yes
+          with_items:
+            # Delete mount directory for boot & root
+            - "{{ mount_dir }}"
+            # Delete directory used for unpackinig
+            - "{{ dest_image_path }}"
+            # Delete /tmp/fstab
+            - "/tmp/fstab"

@@ -40,7 +40,7 @@ Alternative you can use this Ansible Playbook **modify_raspbian_image.yml** to m
 
 4. Edit the **raspbian_vars.yml** file and set the values for the following parameters:
 
-   - **imagetype**: Set default image type in order not having to define it, when you run the playbook with **-e 'imagetype="lite"'**. Value can be lite, desktop, or full.
+   - **imagetype**: Set default image type in order not having to define it, when you run the playbook with e.g. **-e 'imagetype="lite"'**. Value can be lite, desktop, or full.
 
    - **fullhash**: On the official [Raspberry download site](https://www.raspberrypi.org/downloads/raspbian/) you can download the "*Raspbian Buster with desktop and recommended software*" image (the `full image`). There is a hash value (SHA-256) on the site for this image. Set this hash value for the `full image` in the **fullhash** variable. You don't need to change the **fullimage** variable, since this is already the link to download the latest Raspbian full image.
 

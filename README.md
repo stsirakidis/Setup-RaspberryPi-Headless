@@ -18,7 +18,7 @@ Alternative you can use this Ansible Playbook **modify_raspios_image.yml** to mo
 1. Create a new directory and clone this repository within it:
 
    ```bash
-   git clone https://github.com/stsirakidis/Modify-RaspberryPiOS-Image.git
+   git clone https://github.com/stsirakidis/Setup-RaspberryPi-Headless.git
    cd Setup-RaspberryPi-Headless
    ```
 

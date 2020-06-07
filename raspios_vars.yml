@@ -1,0 +1,17 @@
+---
+# Image related variables
+# imagetype: full | desktop | lite - Setting default image type
+imagetype: lite
+fullimage: "https://downloads.raspberrypi.org/raspios_full_armhf_latest"
+fullhash: fdbd6f5b5b7e1fa5e724bd8747c5109801442e9200144d0a1941c9e73c93dd61
+desktopimage: "https://downloads.raspberrypi.org/raspios_armhf_latest"
+desktophash: b9a5c5321b3145e605b3bcd297ca9ffc350ecb1844880afd8fb75a7589b7bd04
+liteimage: "https://downloads.raspberrypi.org/raspios_lite_armhf_latest"
+litehash: f5786604be4b41e292c5b3c711e2efa64b25a5b51869ea8313d58da0b46afc64
+# Image modification related variables
+mount_dir: /mnt/raspios
+dest_image_path: /tmp/raspios
+# Variables for setting up Raspberry Pi headless
+pi_hostname: HOSTNAME
+wifi_country: DE
+wifi_ssid: SSID

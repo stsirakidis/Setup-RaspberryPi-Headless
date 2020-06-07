@@ -1,5 +1,5 @@
 ---
-- name: Modify Raspbian image for the Raspberry Pi
+- name: Modify Raspberry Pi OS image for the Raspberry Pi
   hosts: localhost
   connection: local
   gather_facts: True
@@ -8,8 +8,8 @@
   vars:
     sector_size: 512
   vars_files:
-    - raspbian_vars.yml
-    - raspbian_passwords.yml
+    - raspios_vars.yml
+    - raspios_passwords.yml
   become: yes
   become_user: root
 
@@ -19,7 +19,7 @@
         database: passwd
         key: "{{ ansible_env.USER }}"
 
-    - name: Download latest Raspbian full image
+    - name: Download latest Raspberry Pi OS full image
       get_url:
         url: "{{ fullimage }}"
         dest: "{{ ansible_env.PWD }}"
@@ -29,7 +29,7 @@
       when: imagetype == "full"
       register: download
 
-    - name: Download latest Raspbian desktop image
+    - name: Download latest Raspberry Pi OS desktop image
       get_url:
         url: "{{ desktopimage }}"
         dest: "{{ ansible_env.PWD }}"
@@ -39,7 +39,7 @@
       when: imagetype == "desktop"
       register: download
 
-    - name: Download latest Raspbian lite image
+    - name: Download latest Raspberry Pi OS lite image
       get_url:
         url: "{{ liteimage }}"
         dest: "{{ ansible_env.PWD }}"
@@ -49,7 +49,7 @@
       when: imagetype == "lite"
       register: download
 
-    - name: Modify Raspbian image
+    - name: Modify Raspberry Pi OS image
       block:
         - debug:
             msg: 'Unpack the image and mount its boot and root partitions to the local machine'
@@ -128,7 +128,7 @@
             state: mounted
             fstab: /tmp/fstab
 
-        - name: Enable SSH on the new Raspbian image
+        - name: Enable SSH on the new Raspberry Pi OS image
           file:
             path: "{{ mount_dir }}/boot/ssh"
             owner: root
@@ -188,10 +188,10 @@
             path: "{{ mount_dir }}/boot"
             state: unmounted
 
-        - name: Rename modified Raspbian image to _modified.img
+        - name: Rename modified Raspberry Pi OS image to _modified.img
           command: mv "{{ dest_image_path }}/{{ imagefilename }}" "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
 
-        - name: Compress modified Raspbian image and copy it to working directory
+        - name: Compress modified Raspberry Pi OS image and copy it to working directory
           archive:
             path: "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
             dest: "{{ ansible_env.PWD }}/{{ imagefilename | regex_replace('.img', '_modified.zip') }}"

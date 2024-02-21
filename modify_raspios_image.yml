@@ -15,12 +15,12 @@
 
   tasks:
     - name: Get user info from local passwd
-      getent:
+      ansible.builtin.getent:
         database: passwd
         key: "{{ ansible_env.USER }}"
 
     - name: Download latest Raspberry Pi OS full image
-      get_url:
+      ansible.builtin.get_url:
         url: "{{ fullimage }}"
         dest: "{{ ansible_env.PWD }}"
         owner: "{{ ansible_env.USER }}"
@@ -30,7 +30,7 @@
       register: download
 
     - name: Download latest Raspberry Pi OS desktop image
-      get_url:
+      ansible.builtin.get_url:
         url: "{{ desktopimage }}"
         dest: "{{ ansible_env.PWD }}"
         owner: "{{ ansible_env.USER }}"
@@ -40,7 +40,7 @@
       register: download
 
     - name: Download latest Raspberry Pi OS lite image
-      get_url:
+      ansible.builtin.get_url:
         url: "{{ liteimage }}"
         dest: "{{ ansible_env.PWD }}"
         owner: "{{ ansible_env.USER }}"
@@ -51,47 +51,50 @@
 
     - name: Modify Raspberry Pi OS image
       block:
-        - debug:
+        - ansible.builtin.debug:
             msg: 'Unpack the image and mount its boot and root partitions to the local machine'
 
         - name: Create directory for unpackinig
-          file:
+          ansible.builtin.file:
             path: "{{ dest_image_path }}"
             state: directory
             mode: 0755
 
-        - name: Extract {{ download.dest }} into {{ dest_image_path }}
-          unarchive:
-            src: "{{ download.dest }}"
-            dest: "{{ dest_image_path }}"
-            list_files: yes
-          register: filesinside
+        - name: Extract {{ download.dest }}
+          ansible.builtin.shell: xz -d {{ download.dest }}
 
-        - name: Get the extracted file (first item from list of filesinside.files)
-          set_fact:
-            imagefilename: "{{ filesinside.files[0] }}"
+        - name: Move extracted file to {{ dest_image_path }}
+          ansible.builtin.shell: mv {{ download.dest | replace('.xz', '') }}  {{ dest_image_path }}
+
+        - name: Get the extracted file with full path
+          ansible.builtin.set_fact:
+            imagefilename: "{{ download.dest | replace('.xz', '') }}"
+
+        - name: Get the extracted file name
+          ansible.builtin.set_fact:
+            imagefilename: "{{ imagefilename | replace(ansible_env.PWD, '') }}"
 
         - name: Get the start sector from the /boot partition
-          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}1\s+\K\S+'
+          ansible.builtin.shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}1\s+\K\S+'
           register: start_sector_boot
 
         - name: Get the start sector from the /root partition
-          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\K\S+'
+          ansible.builtin.shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\K\S+'
           register: start_sector_root
 
         - name: Get the last sector from the /root partition
-          shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\S+\s+\K\S+'
+          ansible.builtin.shell: fdisk -l {{ dest_image_path }}/{{ imagefilename }} | grep -oP '^\S+{{ imagefilename }}2\s+\S+\s+\K\S+'
           register: last_sector_root
 
         - name: Set offset for partitions
-          set_fact:
+          ansible.builtin.set_fact:
             offset_boot: "{{ sector_size * start_sector_boot.stdout | int | abs }}"
             sizelm_boot: "{{ sector_size * ( (start_sector_root.stdout | int) - (start_sector_boot.stdout | int) ) | int | abs }}"
             offset_root: "{{ sector_size * start_sector_root.stdout | int | abs }}"
             sizelm_root: "{{ sector_size * ( (last_sector_root.stdout | int) - (start_sector_root.stdout | int) + 1 ) | int | abs }}"
 
         - name: Create mount directory for boot
-          file:
+          ansible.builtin.file:
             path: "{{ mount_dir }}/boot"
             state: directory
             owner: root
@@ -101,7 +104,7 @@
 
         # fstab: /tmp/fstab -> To avoid overwriting the /etc/fstab!!!!!
         - name: Mount boot partition
-          mount:
+          ansible.posix.mount:
             path: "{{ mount_dir }}/boot"
             src: "{{ dest_image_path }}/{{ imagefilename }}"
             fstype: vfat
@@ -110,7 +113,7 @@
             fstab: /tmp/fstab
 
         - name: Create mount directory for root
-          file:
+          ansible.builtin.file:
             path: "{{ mount_dir }}/root"
             state: directory
             owner: root
@@ -120,7 +123,7 @@
 
         # fstab: /tmp/fstab -> To avoid overwriting the /etc/fstab!!!!!
         - name: Mount root partition
-          mount:
+          ansible.posix.mount:
             path: "{{ mount_dir }}/root"
             src: "{{ dest_image_path }}/{{ imagefilename }}"
             fstype: ext4
@@ -129,7 +132,7 @@
             fstab: /tmp/fstab
 
         - name: Enable SSH on the new Raspberry Pi OS image
-          file:
+          ansible.builtin.file:
             path: "{{ mount_dir }}/boot/ssh"
             owner: root
             group: root
@@ -137,19 +140,19 @@
             mode: 0755
 
         - name: Set new hostname in /etc/hosts
-          replace:
+          ansible.builtin.replace:
             path: "{{ mount_dir }}/root/etc/hosts"
             regexp: 'raspberrypi'
             replace: "{{ pi_hostname }}"
 
         - name: Set new hostname in /etc/hostname
-          replace:
+          ansible.builtin.replace:
             path: "{{ mount_dir }}/root/etc/hostname"
             regexp: 'raspberrypi'
             replace: "{{ pi_hostname }}"
 
         - name: Set parameters for the wlan connection
-          lineinfile:
+          ansible.builtin.lineinfile:
             path: "{{ mount_dir }}/boot/wpa_supplicant.conf"
             create: yes
             line: "{{ item }}"
@@ -167,7 +170,7 @@
           no_log: true
 
         - name: Set password for the pi user
-          lineinfile:
+          ansible.builtin.lineinfile:
             dest: "{{ mount_dir }}/root/etc/shadow"
             regexp: 'pi:([^:]+):(.*)'
             line: 'pi:{{ pi_password | password_hash("sha512", 65534 | random(seed=pi_hostname) | string) }}:\2'
@@ -175,24 +178,24 @@
             backrefs: yes        
 
       always:
-        - debug:
+        - ansible.builtin.debug:
             msg: 'Cleaning up'
 
         - name: Unmount root partition
-          mount:
+          ansible.posix.mount:
             path: "{{ mount_dir }}/root"
             state: unmounted
 
         - name: Unmount boot partition
-          mount:
+          ansible.posix.mount:
             path: "{{ mount_dir }}/boot"
             state: unmounted
 
         - name: Rename modified Raspberry Pi OS image to _modified.img
-          command: mv "{{ dest_image_path }}/{{ imagefilename }}" "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
+          ansible.builtin.command: mv "{{ dest_image_path }}/{{ imagefilename }}" "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
 
         - name: Compress modified Raspberry Pi OS image and copy it to working directory
-          archive:
+          community.general.archive:
             path: "{{ dest_image_path }}/{{ imagefilename | regex_replace('.img', '_modified.img') }}"
             dest: "{{ ansible_env.PWD }}/{{ imagefilename | regex_replace('.img', '_modified.zip') }}"
             owner: "{{ ansible_env.USER }}"
@@ -201,7 +204,7 @@
             remove: yes
 
         - name: Delete temporary directories and files
-          file:
+          ansible.builtin.file:
             path: "{{ item }}"
             state: absent
             force: yes
